@@ -12,7 +12,11 @@ const port = process.env.PORT || 3000;
 
 // middleware using
 
-app.use(cors());
+app.use(cors({
+    // we using this for the token
+    origin: ['http://localhost:51/'],
+    credentials: true,
+}));
 app.use(express.json());
 
 // *******************************************************************************************
@@ -40,6 +44,12 @@ async function run() {
         
         // *********************************************************************
         // jwt token related apis
+        app.post('/jwt', async(req, res) => {
+            const {email} = req.body;
+            const user = {email};
+            const token = jwt.sign(user, JWT_ACCESS_SECRET, {expiresIn: '1h'});
+            res.send({token})
+        })
         
         
         // *********************************************************************
