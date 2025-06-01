@@ -29,25 +29,51 @@ const logger = (req, res, next) => {
     next()
 }
 
+// ***************************************
+// This is form fire base Project settings
+var admin = require("firebase-admin");
+
+var serviceAccount = require("./firebase-admin-key.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+
+
+// ***************************************
+
 // for verify the token
 const verifyToken = (req, res, next) => {
     const token = req?.cookies.token;
     console.log('cookie int the middleware', token)
-    if(!token) {
-        return res.status(401).send({ message: 'unauthorized access'})
+    if (!token) {
+        return res.status(401).send({ message: 'unauthorized access' })
     }
-    
-    // verify token
+
+    // verify token cookies
     jwt.verify(token, process.env.JWT_ACCESS_SECRET, (err, decoded) => {
-        if(err){
-            return res.status(401).send({message: 'unauthorized access'})
+        if (err) {
+            return res.status(401).send({ message: 'unauthorized access' })
         }
         req.decoded = decoded;
         // console.log(decoded)
         next()
     })
+}
+
+// verify firebase token
+const verifyFirebaseToken = async(req, res, next) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader.split(' ')[1];
+    if (token) {
+        return res.status(401).send({ message: 'unauthorized access' })
+    }
     
-    
+    const userInfo = await admin.auth().verifyIdToken(token)
+    req.tokenEmail = userInfo.email;
+    next()
+
 }
 
 
@@ -75,23 +101,23 @@ async function run() {
         // getting the collection form the db
         const jobsCollection = client.db('job-portal').collection('jobs')
         const applicationCollection = client.db('job-portal').collection('applications')
-        
+
         // *********************************************************************
         // jwt token related apis
-        app.post('/jwt', async(req, res) => {
+        app.post('/jwt', async (req, res) => {
             const userData = req.body;
-            const token = jwt.sign(userData, process.env.JWT_ACCESS_SECRET, {expiresIn: '1d'});
-            
+            const token = jwt.sign(userData, process.env.JWT_ACCESS_SECRET, { expiresIn: '1d' });
+
             // set token in the cookies
             res.cookie('token', token, {
                 httpOnly: true,
                 secure: false
             })
-            
-            res.send({success: true})
+
+            res.send({ success: true })
         })
-        
-        
+
+
         // *********************************************************************
 
 
@@ -100,7 +126,7 @@ async function run() {
             // checking the email to get a job poster posted jobs
             const email = req.query.email;
             const query = {};
-            if(email){
+            if (email) {
                 query.he_email = email;
             }
             // here is normal get api
@@ -123,19 +149,19 @@ async function run() {
             const result = await jobsCollection.insertOne(newJob);
             res.send(result)
         })
-        
+
         // to get the view application
-        app.get('/applications/job/:job_id', async(req, res) => {
+        app.get('/applications/job/:job_id', async (req, res) => {
             const job_id = req.params.job_id;
-            const query = {jobId: job_id};
+            const query = { jobId: job_id };
             const result = await applicationCollection.find(query).toArray();
             res.send(result);
         })
-        
+
         // getting the updated status data 
-        app.patch('/applications/:id', async(req, res) => {
+        app.patch('/applications/:id', async (req, res) => {
             const id = req.params.id;
-            const filter = {_id: new ObjectId(id)}
+            const filter = { _id: new ObjectId(id) }
             const updatedDoc = {
                 $set: {
                     status: req.body.status
@@ -146,12 +172,16 @@ async function run() {
         })
 
         // sending applicants data to the UI
-        app.get('/applications', logger, verifyToken, async (req, res) => {
-            const email = req.query.email
+        app.get('/applications', logger, /*verifyToken*/ verifyFirebaseToken, async (req, res) => {
+            const email = req.query.email;
             
-            // console.log('inside application api', req.cookies);
-            if(email !== req.decoded.email){
+            if(req.tokenEmail != email){
                 return res.status(403).send({message: 'forbidden access'})
+            }
+
+            // console.log('inside application api', req.cookies);
+            if (email !== req.decoded.email) {
+                return res.status(403).send({ message: 'forbidden access' })
             }
 
             const query = {
