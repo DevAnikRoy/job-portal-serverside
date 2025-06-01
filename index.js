@@ -4,6 +4,9 @@ const cors = require('cors')
 // here we are generating token form JWT
 const jwt = require('jsonwebtoken')
 
+// cookie parser for the token
+const cookieParser = require('cookie-parser')
+
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config()
 
@@ -13,11 +16,42 @@ const port = process.env.PORT || 3000;
 // middleware using
 
 app.use(cors({
-    // we using this for the token
-    origin: ['http://localhost:51/'],
-    credentials: true,
+    origin: ['http://localhost:5173'],
+    credentials: true
 }));
 app.use(express.json());
+// have to use the cookieParser with call
+app.use(cookieParser())
+
+// using when verify the token
+const logger = (req, res, next) => {
+    console.log('inside the logger middleware')
+    next()
+}
+
+// for verify the token
+const verifyToken = (req, res, next) => {
+    const token = req?.cookies.token;
+    console.log('cookie int the middleware', token)
+    if(!token) {
+        return res.status(401).send({ message: 'unauthorized access'})
+    }
+    
+    // verify token
+    jwt.verify(token, process.env.JWT_ACCESS_SECRET, (err, decoded) => {
+        if(err){
+            return res.status(401).send({message: 'unauthorized access'})
+        }
+        req.decoded = decoded;
+        // console.log(decoded)
+        next()
+    })
+    
+    
+}
+
+
+
 
 // *******************************************************************************************
 
@@ -45,10 +79,16 @@ async function run() {
         // *********************************************************************
         // jwt token related apis
         app.post('/jwt', async(req, res) => {
-            const {email} = req.body;
-            const user = {email};
-            const token = jwt.sign(user, JWT_ACCESS_SECRET, {expiresIn: '1h'});
-            res.send({token})
+            const userData = req.body;
+            const token = jwt.sign(userData, process.env.JWT_ACCESS_SECRET, {expiresIn: '1d'});
+            
+            // set token in the cookies
+            res.cookie('token', token, {
+                httpOnly: true,
+                secure: false
+            })
+            
+            res.send({success: true})
         })
         
         
@@ -106,8 +146,13 @@ async function run() {
         })
 
         // sending applicants data to the UI
-        app.get('/applications', async (req, res) => {
+        app.get('/applications', logger, verifyToken, async (req, res) => {
             const email = req.query.email
+            
+            // console.log('inside application api', req.cookies);
+            if(email !== req.decoded.email){
+                return res.status(403).send({message: 'forbidden access'})
+            }
 
             const query = {
                 applicant: email
